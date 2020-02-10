@@ -1,0 +1,83 @@
+{
+  "variables": {
+    "aws_region": "{{env `AWS_REGION`}}"
+  },
+  "builders": [{
+    "type": "amazon-ebs",
+    "region": "{{user `aws_region`}}",
+    "instance_type": "t2.micro",
+    "ssh_username": "root",
+    "ami_name": "CentOS_7.7_x86_64_HVM_EBS_{{isotime \"2006-01-02 03_04_05\"}}",
+    "ami_description": "Basic CentOS 7.7 x86_64 image",
+    "ena_support": "true",
+    "encrypt_boot": "false",
+    "user_data_file": "./base/files/userdata",
+    "ami_regions": [
+      "ap-southeast-2"
+    ],
+    "tags": {
+      "SHA": "{{ user `ami_sha`}}"
+    },
+    "source_ami_filter": {
+      "filters": {
+        "virtualization-type": "hvm",
+        "name": "CentOS_7.7_x86_64_HVM_EBS*",
+        "root-device-type": "ebs"
+      },
+      "owners": ["12344567890"],
+      "most_recent": true
+    }
+  }],
+  "provisioners": [
+  {
+    "type": "shell",
+    "inline": [
+      "echo '** # Install packages via yum'",
+      "yum -y install python-pip git policycoreutils-python",
+      "echo '** # Install ansible'",
+      "pip install ansible",
+      "curl http://169.254.169.254/latest/meta-data/public-ipv4 > /tmp/public_ip"
+    ]
+  },
+  {
+    "type": "file",
+    "direction": "download",
+    "source": "/tmp/public_ip",
+    "destination": "/tmp/ansible_hosts_file"
+  },
+  {
+    "type": "shell-local",
+    "inline_shebang": "/bin/bash -e",
+    "inline": [
+      "rm /tmp/ansible_ssh_key.pub",
+      "ssh-keygen -f /tmp/ansible_ssh_key -q -N \"\""
+    ]
+  },
+  {
+    "type": "file",
+    "direction": "upload",
+    "source": "/tmp/ansible_ssh_key.pub",
+    "destination": "/tmp/ansible_ssh_key.pub"
+  },
+  {
+    "type": "shell",
+    "inline": [
+      "cat /tmp/ansible_ssh_key.pub >> /root/.ssh/authorized_keys"
+    ]
+  },
+  {
+    "type": "shell-local",
+    "inline_shebang": "/bin/bash -e",
+    "inline": [
+      "ansible-playbook ./base/ansible/playbook.yml -i /tmp/ansible_hosts_file --ssh-common-args=\"-o UserKnownHostsFile=/dev/null -o PasswordAuthentication=yes -o StrictHostKeyChecking=no\" --user=root --key-file=/tmp/ansible_ssh_key"
+    ]
+  }
+  ],
+  "post-processors": [
+    {
+      "output": "manifest-base.json",
+      "strip_path": true,
+      "type": "manifest"
+    }
+  ]
+}
